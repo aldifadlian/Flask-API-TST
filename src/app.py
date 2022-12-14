@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-import secrets
 from flask_mysqldb import MySQL
+from werkzeug.security import check_password_hash, generate_password_hash
 import datetime
 import jwt
 
@@ -16,25 +16,26 @@ mysql = MySQL(app)
 
 def token_validation():
     cur = mysql.connection.cursor()
-    api_key = request.headers.get('api-key')
+    auth = request.headers.get('Authorization')
 
-    if not api_key:
+
+    if not auth:
         raise Exception('No auth provided')
 
-    cur.execute('SELECT * FROM userapikeys WHERE api_key = %s', (api_key,))
-  
-    if cur.rowcount < 1:
-        raise Exception('Invalid api key')
+    token = auth.split()[1]
+    data = jwt.decode(token, app.config['SECRET_TOKEN'], ['HS256'])
 
-    return api_key
+    cur.execute("SELECT * FROM useraccount WHERE username = %s", (data['username'],))
+    user = cur.fetchone()
 
-@app.route('/generate_api_key')
-def generate_api_key():
-    cur = mysql.connection.cursor()
-    api_key = secrets.token_urlsafe(64)
-    cur.execute('INSERT INTO userapikeys (api_key) VALUES (%s)', (api_key,))
-    mysql.connection.commit()
-    return api_key
+    if cur.rowcount > 0:
+        if user[2] != data['passhash']:
+            raise Exception('Password incorrect. Please try again')
+    else:
+        raise Exception('User not found')
+
+    return data
+
 
 @app.route('/')
 def Index():
@@ -45,9 +46,10 @@ def Index():
         return e.args[0],401
     cur.execute('SELECT * FROM imdb_topgrossing')
     fetchdata = cur.fetchall()
+    message =  'Hello, I am 18220086 Aldi Fadlian Sunan. Welcome to Top Movies Recommendation and Prediction!'
     cur.close()
 
-    return jsonify(fetchdata)
+    return jsonify(message, fetchdata)
 
 @app.route('/read', methods=['GET'])
 def read():
@@ -58,8 +60,33 @@ def read():
         return e.args[0],401
     movies_id = request.args.get('movies_id', type = int)
     title = request.args.get('title')
+    certificate = request.args.get('certificate')
+    distributor = request.args.get('distributor')
         
-    cur.execute('SELECT * FROM imdb_topgrossing WHERE movies_id = %s OR title = %s', (movies_id, title))
+    cur.execute('SELECT * FROM imdb_topgrossing WHERE movies_id = %s OR title = %s OR certificate = %s OR distributor = %s', (movies_id, title, certificate, distributor))
+    fetchdata = cur.fetchall()
+    cur.close()
+
+    return jsonify(fetchdata)
+
+@app.route('/classification', methods=['GET'])
+def classification():
+    cur = mysql.connection.cursor()
+    try:
+        token_validation()
+    except Exception as e:
+        return e.args[0],401
+    movies_id = request.args.get('movies_id', type = int)
+    certificate = request.args.get('certificate')
+    distributor = request.args.get('distributor')
+        
+    cur.execute("""
+    SELECT distributor, COUNT(TITLE) AS "Jumlah Film", certificate, SUM(replace(gross, ',', '')) AS "Total Penghasilan", AVG(replace(gross, ',', '')) AS "Rata-rata Penghasilan" FROM imdb_topgrossing 
+    WHERE (movies_id=%s OR certificate=%s OR distributor=%s)
+    GROUP BY distributor, certificate
+    ORDER BY distributor ASC, "Total Penghasilan" ASC
+    """
+    , (movies_id, certificate, distributor))
     fetchdata = cur.fetchall()
     cur.close()
 
@@ -166,6 +193,63 @@ def delete():
     cur.execute('DELETE FROM imdb_topgrossing WHERE movies_id = %s', (movies_id,))
     mysql.connection.commit()
     return "Data berhasil dihapus"
+
+@app.route('/register')
+def register():
+    cur = mysql.connection.cursor()
+    username = request.args.get('username')
+    password = request.args.get('password')
+
+    if not username or not password:
+        return "Please fill the username and password below"
+
+    passhash = generate_password_hash(password)
+
+    cur.execute('SELECT * FROM useraccount WHERE username = %s', (username,))
+
+    if cur.rowcount > 0:
+        return "Username already exist"
+
+    cur.execute("""
+        INSERT INTO useraccount (
+            username, passhash
+            ) VALUES (
+                %s, %s
+            )
+            """, (
+                username,
+                passhash
+            ))
+    mysql.connection.commit()
+    return "Register successful, please login to get jwt token"
+
+@app.route('/login')
+def login():
+    cur = mysql.connection.cursor()
+    username = request.args.get('username')
+    password = request.args.get('password')
+
+    if not username or not password:
+        return "Please provide username and password"
+
+    cur.execute('SELECT * FROM useraccount WHERE username = %s', (username,))
+    user = cur.fetchone()
+    
+    if cur.rowcount > 0:
+        if check_password_hash(user[2], password):
+
+            passhash = user[2]
+            token = jwt.encode({
+                'username': username,
+                'passhash': passhash,
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(days=1)
+            }, app.config['SECRET_TOKEN']
+            )
+            return token
+        else:
+            return "Incorrect password"
+    else:
+        return "User not found"
 
 if __name__ == "__main__":
     app.run(debug = True)
