@@ -8,5 +8,5 @@ http://13.92.30.44:5001/
 
 #
 ### DIBUAT OLEH
-- 18220086 ALDI FADLIAN SUNAN
+- 18220086 Aldi Fadlian Sunan
 - 18220012 Fikri Muhammad Fahreza (Partner)
