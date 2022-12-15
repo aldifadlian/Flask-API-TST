@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify
+from urllib.request import urlopen
+import json
 from flask_mysqldb import MySQL
 from werkzeug.security import check_password_hash, generate_password_hash
 import datetime
 import jwt
+import ssl
 
 app = Flask(__name__)
 app.config['SECRET_TOKEN'] = 'J9YPPNlJ1V4SeM_lxsiA8g'
@@ -13,6 +16,11 @@ app.config['MYSQL_PASSWORD'] = 'alliswell82'
 app.config['MYSQL_DB'] = 'tst'
 
 mysql = MySQL(app)
+
+url =  "http://13.92.30.44:5000/grossing_by_rating"
+response = urlopen(url)
+
+data_json = json.loads(response.read())
 
 def token_validation():
     cur = mysql.connection.cursor()
@@ -39,17 +47,8 @@ def token_validation():
 
 @app.route('/')
 def Index():
-    cur = mysql.connection.cursor()
-    try:
-        token_validation()
-    except Exception as e:
-        return e.args[0],401
-    cur.execute('SELECT * FROM imdb_topgrossing')
-    fetchdata = cur.fetchall()
-    message =  'Hello, I am 18220086 Aldi Fadlian Sunan. Welcome to Top Movies Recommendation and Prediction!'
-    cur.close()
-
-    return jsonify(message, fetchdata)
+    message =  'Hello, I am 18220086 Aldi Fadlian Sunan. Welcome to Top Movies Recommendation and Prediction! Please register or login to access!'
+    return jsonify(message)
 
 @app.route('/read', methods=['GET'])
 def read():
